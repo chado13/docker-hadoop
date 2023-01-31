@@ -55,7 +55,63 @@ services:
     env_file:
       - ./hadoop.env
   
+  smartcar-loggen:
+    image: openjdk:18-jdk-slim-buster
+    container_name: smartcar-loggen
+    volumes:
+      - ./samples/CH02:/pilot-pjt
+    working_dir: /pilot-pjt
+
+  zookeeper:
+    image: zookeeper:3.4.14
+    restart: always
+    hostname: zookeeper
+    ports:
+      - 2181:2181
+    networks:
+      - bigdata-network
+
+  kafka-1:
+    image: confluentinc/cp-server:6.0.1
+    hostname: kafka-1
+    restart: always
+    depends_on:
+      - zookeeper
+    networks:
+      - bigdata-network
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_BROKER_RACK: rack-1
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-1:29091,PLAINTEXT_HOST://localhost:9091
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      CONFLUENT_METRICS_REPORTER_BOOTSTRAP_SERVERS: kafka-1:29091
+      CONFLUENT_METRICS_REPORTER_TOPIC_REPLICAS: 1
+      CONFLUENT_SUPPORT_CUSTOMER_ID: "kafka-1"
+      KAFKA_LOG_RETENTION_MS: 10000
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 5000
+    volumes:
+      - broker1-data:/var/lib/kafka/data
+
+  flume:
+    image: "bde2020/sc6-flume"
+    depends_on:
+      - zookeeper
+      - kafka-1
+    command: "bash -c /app/bin/flume-init"
+    networks:
+      - bigdata-network
+    volumes:
+      - "./flume/flume.conf:/opt/flume-config/flume.conf"
+    environment:
+      - FLUME_AGENT_NAME=SmartCar
+
+networks:
+  bigdata-network:
+    driver: bridge
+
 volumes:
   hadoop_namenode:
   hadoop_datanode:
   hadoop_historyserver:
+  broker1-data:
