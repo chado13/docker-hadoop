@@ -2,12 +2,9 @@ version: "3"
 
 services:
   namenode:
-    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    image: bde2020/hadoop-namenode:2.0.0-hadoop2.7.4-java8
     container_name: namenode
     restart: always
-    ports:
-      - 9870:9870
-      - 9000:9000
     volumes:
       - hadoop_namenode:/hadoop/dfs/name
     environment:
@@ -16,45 +13,46 @@ services:
       - ./hadoop.env
 
   datanode:
-    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    image: bde2020/hadoop-datanode:2.0.0-hadoop2.7.4-java8
     container_name: datanode
     restart: always
     volumes:
       - hadoop_datanode:/hadoop/dfs/data
+      - ./samples:/samples
     environment:
-      SERVICE_PRECONDITION: "namenode:9870"
+      SERVICE_PRECONDITION: "namenode:50070"
     env_file:
       - ./hadoop.env
   
   resourcemanager:
-    image: bde2020/hadoop-resourcemanager:2.0.0-hadoop3.2.1-java8
+    image: bde2020/hadoop-resourcemanager:2.0.0-hadoop2.7.4-java8
     container_name: resourcemanager
     restart: always
     environment:
-      SERVICE_PRECONDITION: "namenode:9000 namenode:9870 datanode:9864"
+      SERVICE_PRECONDITION: "namenode:50070 datanode:9864"
     env_file:
       - ./hadoop.env
 
   nodemanager1:
-    image: bde2020/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8
+    image: bde2020/hadoop-nodemanager:2.0.0-hadoop2.7.4-java8
     container_name: nodemanager
     restart: always
     environment:
-      SERVICE_PRECONDITION: "namenode:9000 namenode:9870 datanode:9864 resourcemanager:8088"
+      SERVICE_PRECONDITION: "namenode:50070 datanode:9864 resourcemanager:8088"
     env_file:
       - ./hadoop.env
   
   historyserver:
-    image: bde2020/hadoop-historyserver:2.0.0-hadoop3.2.1-java8
+    image: bde2020/hadoop-historyserver:2.0.0-hadoop2.7.4-java8
     container_name: historyserver
     restart: always
     environment:
-      SERVICE_PRECONDITION: "namenode:9000 namenode:9870 datanode:9864 resourcemanager:8088"
+      SERVICE_PRECONDITION: "namenode:50070 datanode:9864 resourcemanager:8088"
     volumes:
       - hadoop_historyserver:/hadoop/yarn/timeline
     env_file:
       - ./hadoop.env
-  
+
   smartcar-loggen:
     image: openjdk:18-jdk-slim-buster
     container_name: smartcar-loggen
@@ -65,53 +63,150 @@ services:
   zookeeper:
     image: zookeeper:3.4.14
     restart: always
-    hostname: zookeeper
     ports:
       - 2181:2181
-    networks:
-      - bigdata-network
 
-  kafka-1:
+  kafka:
     image: confluentinc/cp-server:6.0.1
-    hostname: kafka-1
     restart: always
     depends_on:
       - zookeeper
-    networks:
-      - bigdata-network
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_BROKER_RACK: rack-1
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-1:29091,PLAINTEXT_HOST://localhost:9091
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
-      CONFLUENT_METRICS_REPORTER_BOOTSTRAP_SERVERS: kafka-1:29091
+      CONFLUENT_METRICS_REPORTER_BOOTSTRAP_SERVERS: kafka:29092
       CONFLUENT_METRICS_REPORTER_TOPIC_REPLICAS: 1
-      CONFLUENT_SUPPORT_CUSTOMER_ID: "kafka-1"
+      CONTROL_CENTER_REPLICATION_FACTOR: 1
+      CONFLUENT_SUPPORT_CUSTOMER_ID: "kafka"
       KAFKA_LOG_RETENTION_MS: 10000
       KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 5000
-    volumes:
-      - broker1-data:/var/lib/kafka/data
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
-  flume:
-    image: "bde2020/sc6-flume"
+  schema-registry:
+    image: confluentinc/cp-schema-registry:6.1.10
+    depends_on:
+    - kafka        
+    environment:
+      SCHEMA_REGISTRY_KAFKASTORE_CONNECTION_URL: 'zookeeper:2181'
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    restart: always
+
+  # kafka-connect:
+  #   image: confluentinc/cp-kafka-connect:6.1.10
+  #   restart: always
+  #   ports:
+  #     - 8083:8083
+  #   depends_on:
+  #     - kafka
+  #   environment:
+  #     CONNECT_BOOTSTRAP_SERVERS: kafka:29092
+  #     CONNECT_REST_PORT: 8083
+  #     CONNECT_GROUP_ID: bigdata-study"
+  #     CONNECT_CONFIG_STORAGE_TOPIC: "bigdata-study-config"
+  #     CONNECT_OFFSET_STORAGE_TOPIC: "bigdata-study-offsets"
+  #     CONNECT_STATUS_STORAGE_TOPIC: "bigdata-study-status"
+  #     CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+  #     CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+  #     CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+  #     CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+  #     CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+  #     CONNECT_KEY_CONVERTER: "io.confluent.connect.avro.AvroConverter"
+  #     CONNECT_VALUE_CONVERTER: "io.confluent.connect.avro.AvroConverter"
+  #     CONNECT_INTERNAL_KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+  #     CONNECT_INTERNAL_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+  #     CONNECT_REST_ADVERTISED_HOST_NAME: "localhost"
+  #     CONNECT_ZOOKEEPER_CONNECT: "zookeeper:2181"
+  #     CONNECTOR_PROPERTY_FILE_PREFIX: "sink-hdfs"
+  #   volumes:
+  #     - ./kafka-connect/sink-hdfs.properties:/etc/kafka-connect/sink-hdfs.properties
+  #   command:
+  #     - bash
+  #     - -c
+  #     - |
+  #       echo "Installing HDFS connector"
+  #       confluent-hub install --no-prompt confluentinc/kafka-connect-hdfs:10.0.0
+  #       # Launch Kafka Connect worker
+  #       /etc/confluent/docker/run
+  #       # Don't exit
+  #       sleep infinity
+  fluent-bit:
+    image: fluent/fluent-bit:2.0.8
+    restart: always
+    depends_on:
+      - kafka
+    volumes:
+      - ./fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf
+      - ./samples/CH02/driver-realtime-log:/pilot-pjt/driver-realtime-log
+      - ./samples/CH02/SmartCar:/pilot-pjt/SmartCar
+  hbase:
+    image: bde2020/hbase-standalone:1.0.0-hbase1.2.6
+    container_name: hbase
+    volumes:
+      - hbase_data:/hbase-data
+    ports:
+      - 16000:16000
+      - 16010:16010
+      - 16020:16020
+      - 16030:16030
+      - 2888:2888
+      - 3888:3888
+    environment:
+      SERVICE_PRECONDITION: "namenode:50070 datanode:50075"
+    env_file:
+      - ./hbase.env
+
+  storm-nimbus:
+    image: storm:1.2.4
+    container_name: storm-nimbus
+    command: storm nimbus
     depends_on:
       - zookeeper
-      - kafka-1
-    command: "bash -c /app/bin/flume-init"
-    networks:
-      - bigdata-network
+    links:
+      - zookeeper
+    restart: always
+    ports:
+      - 6627:6627
     volumes:
-      - "./flume/flume.conf:/opt/flume-config/flume.conf"
-    environment:
-      - FLUME_AGENT_NAME=SmartCar
+      - ./samples:/pilot-pjt
 
-networks:
-  bigdata-network:
-    driver: bridge
+  storm-supervisor:
+    image: storm:1.2.4
+    container_name: storm-supervisor
+    command: storm supervisor
+    depends_on:
+      - storm-nimbus
+      - zookeeper
+    links:
+      - storm-nimbus
+      - zookeeper
+    restart: always
+  storm-ui:
+    image: storm:1.2.4
+    ports:
+      - "49080:8080"
+    links: 
+      - storm-nimbus:nimbus
+      - zookeeper
+    command: storm ui
+    volumes:
+      - ./samples:/pilot-pjt
+    
+    
+
+  redis:
+    image: redis:6.0.1-alpine
+    container_name: redis
+    ports:
+      - 6379:6379
 
 volumes:
   hadoop_namenode:
   hadoop_datanode:
   hadoop_historyserver:
-  broker1-data:
+  hbase_data:
+  hbase_zookeeper_data:
